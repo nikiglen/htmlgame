@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+	<style type="text/css">
+		.gameCanvas {
+			padding: 0;
+			margin-left: auto;
+			margin-right: auto;
+			display: block;
+		}
+	</style>
+</head>
+
+<body>
+	
+	<canvas id="myCanvas" class="gameCanvas" width="1000" height="680"></canvas>
+
+	<script type="text/javascript">
+		class Vector2 {
+			constructor(xf, yf) {
+				this.x = xf;
+				this.y = yf;
+			}
+
+			// Getters
+			get magnitude() {
+				var x = this.x;
+				var y = this.y;
+				return Math.sqrt(x*x + y*y);
+			}
+
+			// Return the addition of another vector to this vector
+			add(otherVector) {
+				return new Vector2(this.x + otherVector.x, this.y + otherVector.y);
+			}
+			// Return the subtraction of another vector from this vector
+			subtract(otherVector) {
+				return new Vector2(this.x - otherVector.x, this.y - otherVector.y);
+			}
+			// Return the dot product between this vector and another vector
+			dot(otherVector) {
+				return this.x * otherVector.x + this.y * otherVector.y;
+			}
+			// Return a copy of this vector
+			copy() {
+				return new Vector2(this.x, this.y);
+			}
+			// Return a normalized version of this vector (unit vector)
+			normalized() {
+				var length = this.magnitude;
+				if (length != 0) {
+					return new Vector2(this.x / length, this.y / length);
+				}
+				else {
+					return this.copy();
+				}
+			}
+			// Return scalar multiplied by this vector
+			scaled(c) {
+				return new Vector2(this.x * c, this.y * c);
+			}
+			// Return a string representing the coordinates
+			toString() {
+				return "(" + this.x + "," + this.y + ")";
+			}
+		}
+
+		// Rounds a 2d vector to pixel coordinates
+		function pixelSnap(vector) {
+			return new Vector2(Math.floor(vector.x), Math.floor(vector.y));
+		}
+
+
+		/***** PERLIN NOISE *****/
+		// Reference: https://en.wikipedia.org/wiki/Perlin_noise#Implementation
+
+		// Sigmoid function
+		function sigmoid(x) {
+			//return 1 / (1 + Math.E ** (-1 * x));
+			return Math.tanh(x);
+		}
+		// Fade function
+		function fade(a) {
+			return 3*a*a - 2*a*a*a;
+		}
+		// Linearly interpolates between a and b with weight w between 0 and 1
+		function lerp(a, b, w) {
+			return w * (b - a) + a;
+		}
+		// Cubic interpolation
+		function smoothStep(a, b, w) {
+			return (b - a) * (3.0 - w * 2.0) * w * w + a;
+		}
+		// Even smoother interpolation
+		function smootherStep(a, b, w) {
+			return (b - a) * ((w * (w * 6.0 - 15.0) + 10.0) * w * w * w) + a;
+		}
+		// Generate a random gradient vector with given coordinates
+		function randomGradient(coords) {
+			// Random value of radians generated with the two coordinates
+			//t = mixNoiseFunction(coords) * 2 * Math.PI;
+			t = 2920 * Math.sin(coords.x * 21942 + coords.y * 171324 + 8912) 
+				* Math.cos(coords.x * 23157 * coords.y * 217832 + 9758);
+			// Convert into unit vector
+			return new Vector2(Math.cos(t), Math.sin(t));
+		}
+		// Calculate dot product of gradient * distance vectors
+		function dotGridGradient(cornerVec, coords) {
+			grad = randomGradient(cornerVec);
+
+			// Compute distance vector
+			dist = coords.subtract(cornerVec);
+
+			// Return dot product
+			return grad.dot(dist);
+		}
+
+		// Function to compute perlin noise value (between 0 and 1) for given coords
+		function perlinNoise(coords) {
+			// Determine coords of each corner
+			upperLeftCorner = new Vector2(Math.floor(coords.x), Math.floor(coords.y));
+			upperRightCorner = new Vector2(upperLeftCorner.x + 1, upperLeftCorner.y);
+			lowerLeftCorner = new Vector2(upperLeftCorner.x, upperLeftCorner.y + 1);
+			lowerRightCorner = new Vector2(upperLeftCorner.x + 1, upperLeftCorner.y + 1);
+
+			// Determine interpolation weights
+			interpWeights = coords.subtract(upperLeftCorner);
+			interpWeights.x = fade(interpWeights.x);
+			interpWeights.y = fade(interpWeights.y);
+
+			// Interpolate between corner gradients
+			dot0 = dotGridGradient(upperLeftCorner, coords);
+			dot1 = dotGridGradient(upperRightCorner, coords);
+			ix0 = lerp(dot0, dot1, interpWeights.x);
+
+			dot0 = dotGridGradient(lowerLeftCorner, coords);
+			dot1 = dotGridGradient(lowerRightCorner, coords);
+			ix1 = lerp(dot0, dot1, interpWeights.x);
+
+			// Use sigmoid to bound output to (-1, 1)
+			return sigmoid(lerp(ix0, ix1, interpWeights.y));
+		}
+
+		/************************************/
+
+
+
+
+		// Player class
+		class Player {
+			constructor(vector) {
+				this.pos = vector.copy();
+				this.playerSpriteDims = (new Vector2(48, 64)).scaled(2);
+				// move distance (in pixels) per frame
+				this.moveSpeed = 5;
+				// character sprite
+				this.sprite = new Image(this.playerSpriteDims.x, this.playerSpriteDims.y);
+				this.sprite.src = 'sprites/player.png';
+			}
+
+			// Adds the given vector to position, scaled by speed * deltaTime
+			// * deltaTime should be the ratio of timeSinceLastFrame / fpsOfGameLoop
+			// * in other words, player moves more if the last frame was slower than the intended fps
+			move(vector, frameSpeedRatio) {
+				this.pos = pixelSnap(this.pos.add(vector.scaled(this.moveSpeed * frameSpeedRatio)));
+			}
+			// Sets the absolute position of the player
+			setPos(vector) {
+				this.pos = vector.copy();
+			}
+			// Renders the player sprite on the game area, given as an argument
+			render(gameArea) {
+				// Get exact position relative to camera
+				var relPos = this.pos.subtract(gameArea.camera.pos);
+
+				// Offset from center of canvas, then draw the sprite
+				var drawPos = pixelSnap(relPos.add(gameArea.center));
+				gameArea.context.fillStyle = "#EE0000";
+				var halfVec = this.playerSpriteDims.scaled(0.5);
+				gameArea.context.drawImage(this.sprite, drawPos.x - halfVec.x, drawPos.y - halfVec.y,
+											this.playerSpriteDims.x, this.playerSpriteDims.y);
+			}
+		}
+
+		// Camera class
+		class Camera {
+			constructor(vector) {
+				this.pos = vector.copy();
+				// These two fields define the distance from the camera that the target can
+				// move before the camera has to move
+				this.boundX = 250;
+				this.boundY = 170;
+				// This is target field, which should be null or an object with a .pos method
+				this.target = null;
+			}
+
+			// Sets the target to some object, which should have a .pos method
+			setTarget(obj) {
+				this.target = obj;
+			}
+			// Sets the bounding box for the camera
+			setBounds(x, y) {
+				this.boundX = x;
+				this.boundY = y;
+			}
+			// Changes the position of the camera manually by a vector position
+			setPos(position) {
+				this.pos = position;
+			}
+			// Updates the camera position if target is out of bounds
+			update() {
+				// Get position of target relative to camera
+				var targetRelPos = this.target.pos.subtract(this.pos);
+
+				// Shift x if out of bounds on x-axis
+				if (Math.abs(targetRelPos.x) > this.boundX) {
+					this.pos.x += Math.sign(targetRelPos.x) * (Math.abs(targetRelPos.x) - this.boundX);
+				}
+
+				// Shift y if out of bounds on y-axis
+				if (Math.abs(targetRelPos.y) > this.boundY) {
+					this.pos.y += Math.sign(targetRelPos.y) * (Math.abs(targetRelPos.y) - this.boundY);
+				}
+
+				// Snap to pixels
+				this.pos = pixelSnap(this.pos);
+			}
+		}
+
+		// Game area object
+		var gameArea = {
+			canvas : document.getElementById("myCanvas"),
+			lastMoveInput : new Vector2(0, 0),
+			lastFrameUpdate : 0,
+			player : new Player(new Vector2(0, 0)),
+			camera : new Camera(new Vector2(0, 0)),
+			start : function(fps) {
+				this.fps = fps;
+				this.canvas.width = 1000;
+        		this.canvas.height = 680;
+        		this.center = new Vector2(this.canvas.width / 2, this.canvas.height / 2);
+        		this.tileWidth = 50;
+        		this.context = this.canvas.getContext("2d");
+        		// Compute tile dimensions of canvas add 1 to account for partial tiles on edges
+				this.tileDims = new Vector2((gameArea.canvas.width / gameArea.tileWidth) + 1, 
+								   	   		(gameArea.canvas.height / gameArea.tileWidth) + 1);
+				// Make camera target player and set bounding box dimensions
+				this.camera.setTarget(this.player);
+				this.camera.setBounds(this.canvas.width / 6, this.canvas.height / 6);
+				// Start all key events
+				startKeyEvents();
+			},
+			clear : function () {
+				this.context.fillStyle = "#000000";
+				this.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
+			}
+		};
+
+		// Creates imagedata with perlin noise, in the given context
+		// * width,height are dimensions of image
+		// * gridSize is the number of pixels on each side of a cell
+		function perlinNoiseImage(context, width, height, gridSize) {
+
+			gridSize = 2048;
+
+			min = 10;
+			max = -10;
+
+			// Get new imagedata object
+			imgData = context.createImageData(width, height);
+
+			// Loop through all pixels and render noise with each, 1 being fully white
+			// Note that each pixel has 4 bytes for R,G,B,A
+			for (let x = 0; x < width; x++) {
+				for (let y = 0; y < height; y++) {
+					// Get perlin noise for "center" of this pixel
+					noise = perlinNoise((new Vector2((x + 0.5), (y + 0.5))).scaled(1 / gridSize));
+
+					if (noise > max) {
+						max = noise;
+					}
+					if (noise < min) {
+						min = noise;
+					}
+					/**
+					// Set RGB values to corresponding percentage of white
+					colorValue = Math.floor(255 * ((noise * 2 + 1) / 2));
+					imgData.data[(y * width * 4) + (x * 4)] = colorValue;
+					imgData.data[(y * width * 4) + (x * 4) + 1] = colorValue;
+					imgData.data[(y * width * 4) + (x * 4) + 2] = colorValue;
+
+					// Set alpha to 100%
+					imgData.data[(y * width * 4) + (x * 4) + 3] = 255;
+					**/
+
+					// Terrain coloring
+					if (noise < -0.25) {
+						imgData.data[(y * width * 4) + (x * 4) + 2] = 200;
+					}
+					else if (noise < -0.15) {
+						imgData.data[(y * width * 4) + (x * 4)] = 210;
+						imgData.data[(y * width * 4) + (x * 4) + 1] = 200;
+						imgData.data[(y * width * 4) + (x * 4) + 2] = 150;
+					}
+					else if (noise < 0.1) {
+						imgData.data[(y * width * 4) + (x * 4)] = 72;
+						imgData.data[(y * width * 4) + (x * 4) + 1] = 140;
+						imgData.data[(y * width * 4) + (x * 4) + 2] = 56;
+					}
+					else if (noise < 0.35) {
+						imgData.data[(y * width * 4) + (x * 4)] = 150;
+						imgData.data[(y * width * 4) + (x * 4) + 1] = 150;
+						imgData.data[(y * width * 4) + (x * 4) + 2] = 150;
+					}
+					else {
+						imgData.data[(y * width * 4) + (x * 4)] = 255;
+						imgData.data[(y * width * 4) + (x * 4) + 1] = 255;
+						imgData.data[(y * width * 4) + (x * 4) + 2] = 255;
+					}
+					// Set alpha to 100%
+					imgData.data[(y * width * 4) + (x * 4) + 3] = 255;
+				}
+			}
+
+			console.log("max = " + max);
+			console.log("min = " + min);
+
+			return imgData;
+		}
+
+		// Converts a number to uint32: https://2ality.com/2012/02/js-integers.html
+		function toUint32(n) {
+			// to integer
+			n = Math.sign(n) * Math.floor(Math.abs(n));
+			// modulo 2^32
+			return n - Math.floor(n / (2**32)) * (2**32);
+		}
+
+		// Mix hash function modified from here: http://burtleburtle.net/bob/hash/doobs.html
+		// c can be any number, scale used to increase random distribution
+		// Returns number between 0 and 1
+		function mixNoiseFunction(vector) {
+			scale = 3333333;
+			a = toUint32(vector.x * scale);
+			b = toUint32(vector.y * scale);
+			c = 139;
+
+			a -= b; a -= c; a ^= (c>>13);
+  			b -= c; b -= a; b ^= (a<<8);
+  			c -= a; c -= b; c ^= (b>>13);
+  			a -= b; a -= c; a ^= (c>>12);
+  			b -= c; b -= a; b ^= (a<<16);
+  			c -= a; c -= b; c ^= (b>>5);
+  			a -= b; a -= c; a ^= (c>>3);
+  			b -= c; b -= a; b ^= (a<<10);
+  			c -= a; c -= b; c ^= (b>>15);
+
+  			return (c) / (2**32);
+		}
+
+		// Draw a tile on the canvas relative to its distance from the camera
+		// tilePos must be tile coordinates (scaled by tile width and in integer form)
+		function renderTile(tilePos) {
+			// Get exact position relative to camera
+			relPos = (tilePos.scaled(gameArea.tileWidth)).subtract(gameArea.camera.pos);
+
+			// Offset from center of canvas, then draw the tile
+			drawPos = pixelSnap(relPos.add(gameArea.center));
+			gameArea.context.fillStyle = "rgb(" + 0
+												+ ", " + (255 * (0.5 + mixNoiseFunction(tilePos) / 20))
+												+ ", " + 0 +")";
+			half = gameArea.tileWidth / 2;
+			gameArea.context.fillRect(drawPos.x - half, drawPos.y - half, gameArea.tileWidth, gameArea.tileWidth);
+		}
+
+		// Return the tile coordinates that an exact position lies within
+		function getTileCoords(vector) {
+			return new Vector2(Math.floor(vector.x / gameArea.tileWidth),
+							   Math.floor(vector.y / gameArea.tileWidth));
+		}
+
+		var perlinImgData = null;
+
+		// Render the game area
+		function updateGameArea() {
+			// Clear canavas and compute milliseconds since last frame
+			gameArea.clear();
+			timeSinceLastFrame = Date.now() - gameArea.lastFrameUpdate;
+			gameArea.lastFrameUpdate = Date.now();
+
+			// Add movement to player
+			gameArea.player.move(gameArea.lastMoveInput.normalized(), timeSinceLastFrame / (1000 / gameArea.fps));
+			// Then update the camera
+			gameArea.camera.update();
+
+			//console.log("camera pos: " + gameArea.camera.pos.toString());
+			//console.log("movement: " + gameArea.lastMoveInput.toString());
+
+			// Loop and render all tiles relative to camera
+			for (let i = -8; i < 9; i++) {
+				for (let j = -8; j < 9; j++) {
+					renderTile(new Vector2(i, j));
+				}
+			}
+
+			// *TESTING* Render perlin noise image
+			perlinWorldPos = new Vector2(-500, -340);
+			drawPos = pixelSnap(perlinWorldPos.subtract(gameArea.camera.pos).add(gameArea.center));
+			gameArea.context.putImageData(perlinImgData, drawPos.x, drawPos.y);
+
+			// Render the player
+			gameArea.player.render(gameArea);
+		}
+
+		// Run the game at 60 fps
+		gameArea.start(60);
+		perlinImgData = perlinNoiseImage(gameArea.context, 2000, 2000, 1)
+		setInterval(updateGameArea, 1000/(gameArea.fps));
+
+		/** Test move distance per second
+		var lastPlayerPosition = new Vector2(0, 0);
+		setInterval(function() {
+			pos = gameArea.player.pos.copy();
+			console.log("distance traveled: " + pos.subtract(lastPlayerPosition).magnitude);
+			lastPlayerPosition = pos;
+		}, 1000);
+		**/
+
+		// Listeners for key events
+		function startKeyEvents() {
+			// Triggers when a key is pressed
+			document.addEventListener('keydown', function(event) {
+				// Left movement ('a' or left arrow key)
+	    		if (event.keyCode == 37 || event.keyCode == 65) {
+	        		gameArea.lastMoveInput.x = -1;
+		    	}
+		    	// Right movement ('d' or right arrow key)
+		    	if (event.keyCode == 39 || event.keyCode == 68) {
+		        	gameArea.lastMoveInput.x = 1;
+		    	}
+		    	// Up movement ('w' or up arrow key)
+		    	if (event.keyCode == 38 || event.keyCode == 87) {
+		        	gameArea.lastMoveInput.y = -1;
+		    	}
+		    	// Down movement ('s' or down arrow key)
+		    	if (event.keyCode == 40 || event.keyCode == 83) {
+		        	gameArea.lastMoveInput.y = 1;
+		    	}
+			});
+			// Triggers when a key is released
+			document.addEventListener('keyup', function(event) {
+				// Left stop ('a' or left arrow key)
+	    		if (event.keyCode == 37 || event.keyCode == 65) {
+	        		gameArea.lastMoveInput.x = 0;
+		    	}
+		    	// Right stop ('d' or right arrow key)
+		    	if (event.keyCode == 39 || event.keyCode == 68) {
+		        	gameArea.lastMoveInput.x = 0;
+		    	}
+		    	// Up stop ('w' or up arrow key)
+		    	if (event.keyCode == 38 || event.keyCode == 87) {
+		        	gameArea.lastMoveInput.y = 0;
+		    	}
+		    	// Down stop ('s' or down arrow key)
+		    	if (event.keyCode == 40 || event.keyCode == 83) {
+		        	gameArea.lastMoveInput.y = 0;
+		    	}
+			});
+		}
+	</script>
+
+</body>
+
+
+</html>
