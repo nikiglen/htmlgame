@@ -263,10 +263,7 @@
         // * gridSize is the number of pixels on each side of a cell
         function perlinNoiseImage(context, width, height, gridSize) {
 
-            gridSize = 2048;
-
-            min = 10;
-            max = -10;
+            gridSize = 32;
 
             // Get new imagedata object
             imgData = context.createImageData(width, height);
@@ -277,13 +274,10 @@
                 for (let y = 0; y < height; y++) {
                     // Get perlin noise for "center" of this pixel
                     noise = perlinNoise((new Vector2((x + 0.5), (y + 0.5))).scaled(1 / gridSize));
+                    // Add additional octaves
+                    noise += perlinNoise((new Vector2((x + 0.5), (y + 0.5))).scaled(1 / (gridSize * 10)));
+                    noise += perlinNoise((new Vector2((x + 0.5), (y + 0.5))).scaled(1 / (gridSize / 10))) * 0.1;
 
-                    if (noise > max) {
-                        max = noise;
-                    }
-                    if (noise < min) {
-                        min = noise;
-                    }
                     /**
                     // Set RGB values to corresponding percentage of white
                     colorValue = Math.floor(255 * ((noise * 2 + 1) / 2));
@@ -323,9 +317,6 @@
                     imgData.data[(y * width * 4) + (x * 4) + 3] = 255;
                 }
             }
-
-            console.log("max = " + max);
-            console.log("min = " + min);
 
             return imgData;
         }
