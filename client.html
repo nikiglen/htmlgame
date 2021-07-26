@@ -18,6 +18,25 @@
     <canvas id="myCanvas" class="gameCanvas" width="1000" height="680"></canvas>
 
     <script type="text/javascript">
+        // Implementation of a RGBA color value class
+        class RGBA {
+            constructor(r, g, b, a) {
+                this.red = r != undefined ? r : 0;
+                this.green = g != undefined ? g : 0;
+                this.blue = b != undefined ? b : 0;
+                this.alpha = a != undefined ? a : 1;
+            }
+
+            // Convert this rgba value to a string (for style input)
+            toString() {
+                return "rgb(" + this.red
+                            + ", " + this.green
+                            + ", " + this.blue
+                            + ", " + this.alpha +")";
+            }
+        }
+
+        // Implementation of a 2D vector class
         class Vector2 {
             constructor(xf, yf) {
                 this.x = xf;
@@ -241,7 +260,7 @@
                 this.canvas.width = 1000;
                 this.canvas.height = 680;
                 this.center = new Vector2(this.canvas.width / 2, this.canvas.height / 2);
-                this.tileWidth = 50;
+                this.tileWidth = 48;
                 this.context = this.canvas.getContext("2d");
                 // Compute tile dimensions of canvas add 1 to account for partial tiles on edges
                 this.tileDims = new Vector2((gameArea.canvas.width / gameArea.tileWidth) + 1, 
@@ -257,69 +276,6 @@
                 this.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
             }
         };
-
-        // Creates imagedata with perlin noise, in the given context
-        // * width,height are dimensions of image
-        // * gridSize is the number of pixels on each side of a cell
-        function perlinNoiseImage(context, width, height, gridSize) {
-
-            gridSize = 32;
-
-            // Get new imagedata object
-            imgData = context.createImageData(width, height);
-
-            // Loop through all pixels and render noise with each, 1 being fully white
-            // Note that each pixel has 4 bytes for R,G,B,A
-            for (let x = 0; x < width; x++) {
-                for (let y = 0; y < height; y++) {
-                    // Get perlin noise for "center" of this pixel
-                    noise = perlinNoise((new Vector2((x + 0.5), (y + 0.5))).scaled(1 / gridSize));
-                    // Add additional octaves
-                    noise += perlinNoise((new Vector2((x + 0.5), (y + 0.5))).scaled(1 / (gridSize * 10)));
-                    noise += perlinNoise((new Vector2((x + 0.5), (y + 0.5))).scaled(1 / (gridSize / 10))) * 0.1;
-
-                    /**
-                    // Set RGB values to corresponding percentage of white
-                    colorValue = Math.floor(255 * ((noise * 2 + 1) / 2));
-                    imgData.data[(y * width * 4) + (x * 4)] = colorValue;
-                    imgData.data[(y * width * 4) + (x * 4) + 1] = colorValue;
-                    imgData.data[(y * width * 4) + (x * 4) + 2] = colorValue;
-
-                    // Set alpha to 100%
-                    imgData.data[(y * width * 4) + (x * 4) + 3] = 255;
-                    **/
-
-                    // Terrain coloring
-                    if (noise < -0.25) {
-                        imgData.data[(y * width * 4) + (x * 4) + 2] = 200;
-                    }
-                    else if (noise < -0.15) {
-                        imgData.data[(y * width * 4) + (x * 4)] = 210;
-                        imgData.data[(y * width * 4) + (x * 4) + 1] = 200;
-                        imgData.data[(y * width * 4) + (x * 4) + 2] = 150;
-                    }
-                    else if (noise < 0.1) {
-                        imgData.data[(y * width * 4) + (x * 4)] = 72;
-                        imgData.data[(y * width * 4) + (x * 4) + 1] = 140;
-                        imgData.data[(y * width * 4) + (x * 4) + 2] = 56;
-                    }
-                    else if (noise < 0.35) {
-                        imgData.data[(y * width * 4) + (x * 4)] = 150;
-                        imgData.data[(y * width * 4) + (x * 4) + 1] = 150;
-                        imgData.data[(y * width * 4) + (x * 4) + 2] = 150;
-                    }
-                    else {
-                        imgData.data[(y * width * 4) + (x * 4)] = 255;
-                        imgData.data[(y * width * 4) + (x * 4) + 1] = 255;
-                        imgData.data[(y * width * 4) + (x * 4) + 2] = 255;
-                    }
-                    // Set alpha to 100%
-                    imgData.data[(y * width * 4) + (x * 4) + 3] = 255;
-                }
-            }
-
-            return imgData;
-        }
 
         // Converts a number to uint32: https://2ality.com/2012/02/js-integers.html
         function toUint32(n) {
@@ -351,6 +307,45 @@
             return (c) / (2**32);
         }
 
+        // Get the noise of a tile and return its color
+        function getTileColor(tilePos) {
+            // Determines the scale of the size (proportional)
+            gridSize = 32;
+
+            // Get perlin noise for center of this tile
+            noise = perlinNoise((new Vector2((tilePos.x + 0.5), (tilePos.y + 0.5))).scaled(1 / gridSize));
+
+            // Decide terrain color for this tile
+            color = new RGBA();
+
+            if (noise < -0.25) {
+                color.blue = 200;
+            }
+            else if (noise < -0.15) {
+                color.red = 210;
+                color.green = 200;
+                color.blue = 150;
+            }
+            else if (noise < 0.1) {
+                color.red = 72;
+                color.green = 140;
+                color.blue = 56;
+            }
+            else if (noise < 0.35) {
+                color.red = 150;
+                color.green = 150;
+                color.blue = 150;
+            }
+            else {
+                color.red = 255;
+                color.green = 255;
+                color.blue = 255;
+            }
+            
+            return color.toString();
+
+        }
+
         // Draw a tile on the canvas relative to its distance from the camera
         // tilePos must be tile coordinates (scaled by tile width and in integer form)
         function renderTile(tilePos) {
@@ -359,9 +354,7 @@
 
             // Offset from center of canvas, then draw the tile
             drawPos = pixelSnap(relPos.add(gameArea.center));
-            gameArea.context.fillStyle = "rgb(" + 0
-                                                + ", " + (255 * (0.5 + mixNoiseFunction(tilePos) / 20))
-                                                + ", " + 0 +")";
+            gameArea.context.fillStyle = getTileColor(tilePos);
             half = gameArea.tileWidth / 2;
             gameArea.context.fillRect(drawPos.x - half, drawPos.y - half, gameArea.tileWidth, gameArea.tileWidth);
         }
@@ -386,20 +379,16 @@
             // Then update the camera
             gameArea.camera.update();
 
-            //console.log("camera pos: " + gameArea.camera.pos.toString());
-            //console.log("movement: " + gameArea.lastMoveInput.toString());
+            // Loop and render all tiles in view of camera
+            cameraTile = gameArea.camera.pos.copy();
+            cameraTile.x = Math.floor(cameraTile.x / gameArea.tileWidth);
+            cameraTile.y = Math.floor(cameraTile.y / gameArea.tileWidth);
 
-            // Loop and render all tiles relative to camera
-            for (let i = -8; i < 9; i++) {
-                for (let j = -8; j < 9; j++) {
-                    renderTile(new Vector2(i, j));
+            for (let i = -11; i < 12; i++) {
+                for (let j = -9; j < 10; j++) {
+                    renderTile((new Vector2(i, j)).add(cameraTile));
                 }
             }
-
-            // *TESTING* Render perlin noise image
-            perlinWorldPos = new Vector2(-500, -340);
-            drawPos = pixelSnap(perlinWorldPos.subtract(gameArea.camera.pos).add(gameArea.center));
-            gameArea.context.putImageData(perlinImgData, drawPos.x, drawPos.y);
 
             // Render the player
             gameArea.player.render(gameArea);
@@ -407,7 +396,6 @@
 
         // Run the game at 60 fps
         gameArea.start(60);
-        perlinImgData = perlinNoiseImage(gameArea.context, 2000, 2000, 1)
         setInterval(updateGameArea, 1000/(gameArea.fps));
 
         /** Test move distance per second
