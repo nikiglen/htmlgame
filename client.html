@@ -164,8 +164,8 @@
 
         /************************************/
 
-
-
+        // A list of all types of terrain (tile types)
+        var terrainList = ["grass", "sand", "water", "stone", "snow"];
 
         // Player class
         class Player {
@@ -196,7 +196,6 @@
 
                 // Offset from center of canvas, then draw the sprite
                 var drawPos = pixelSnap(relPos.add(gameArea.center));
-                gameArea.context.fillStyle = "#EE0000";
                 var halfVec = this.playerSpriteDims.scaled(0.5);
                 gameArea.context.drawImage(this.sprite, drawPos.x - halfVec.x, drawPos.y - halfVec.y,
                                             this.playerSpriteDims.x, this.playerSpriteDims.y);
@@ -248,6 +247,44 @@
             }
         }
 
+        // Tile Sprite Dictionary (stores images for each sprite)
+        class TileSpriteDict {
+            // constructor takes the width of a square tile
+            constructor(size) {
+                this.tileWidth = size;
+                this.dict = {};
+            }
+
+            // attempt to load sprite with path sprites/tiles/[name].png
+            // returns true if successful, false otherwise
+            loadTile(name) {
+                // NOTE: can use fs module in Node.js
+                /**
+                // check that file exists
+                checkFile = new File('sprites/tiles/' + name + '.png');
+                if (!checkFile.exists()) {
+                    return false;
+                }
+                **/
+
+                // create a new sprite from the image
+                this.dict[name] = new Image(this.tileWidth, this.tileWidth);
+                this.dict[name].src = 'sprites/tiles/' + name + '.png';
+
+                return true;
+            }
+
+            // retrieve the sprite for a given name
+            // return null if not found
+            getTile(name) {
+                if (name in this.dict) {
+                    return this.dict[name];
+                } else {
+                    return null;
+                }
+            }
+        }
+
         // Game area object
         var gameArea = {
             canvas : document.getElementById("myCanvas"),
@@ -255,19 +292,31 @@
             lastFrameUpdate : 0,
             player : new Player(new Vector2(0, 0)),
             camera : new Camera(new Vector2(0, 0)),
+            tileDict : null,
             start : function(fps) {
                 this.fps = fps;
                 this.canvas.width = 1000;
                 this.canvas.height = 680;
                 this.center = new Vector2(this.canvas.width / 2, this.canvas.height / 2);
-                this.tileWidth = 48;
+                this.tileWidth = 50;
                 this.context = this.canvas.getContext("2d");
+
                 // Compute tile dimensions of canvas add 1 to account for partial tiles on edges
                 this.tileDims = new Vector2((gameArea.canvas.width / gameArea.tileWidth) + 1, 
                                             (gameArea.canvas.height / gameArea.tileWidth) + 1);
+
+                // Create a new tile sprite dict and load all tiles
+                this.tileDict = new TileSpriteDict(this.tileWidth);
+                terrainList.forEach(name => {
+                    if (!this.tileDict.loadTile(name)) {
+                        console.log("Failed to load sprite for " + name + " tile.");
+                    }
+                });
+
                 // Make camera target player and set bounding box dimensions
                 this.camera.setTarget(this.player);
                 this.camera.setBounds(this.canvas.width / 6, this.canvas.height / 6);
+
                 // Start all key events
                 startKeyEvents();
             },
@@ -307,43 +356,32 @@
             return (c) / (2**32);
         }
 
-        // Get the noise of a tile and return its color
-        function getTileColor(tilePos) {
-            // Determines the scale of the size (proportional)
+        // Get the noise of a tile and return the corresponding tile sprite
+        function getTileSprite(tilePos) {
+            // Determines the scale of the grid (ex: 32 x 32 tiles per cell)
             gridSize = 32;
 
-            // Get perlin noise for center of this tile
+            // Get noise for center of this tile
             noise = perlinNoise((new Vector2((tilePos.x + 0.5), (tilePos.y + 0.5))).scaled(1 / gridSize));
+            noise += perlinNoise((new Vector2((tilePos.x + 0.5), (tilePos.y + 0.5))).scaled(1 / (gridSize / 10))) * 0.05;
+            noise += perlinNoise((new Vector2((tilePos.x + 0.5), (tilePos.y + 0.5))).scaled(1 / (gridSize * 10)));
 
-            // Decide terrain color for this tile
-            color = new RGBA();
-
+            // Decide terrain for this tile
             if (noise < -0.25) {
-                color.blue = 200;
+                return gameArea.tileDict.getTile("water");
             }
             else if (noise < -0.15) {
-                color.red = 210;
-                color.green = 200;
-                color.blue = 150;
+                return gameArea.tileDict.getTile("sand");
             }
             else if (noise < 0.1) {
-                color.red = 72;
-                color.green = 140;
-                color.blue = 56;
+                return gameArea.tileDict.getTile("grass");
             }
             else if (noise < 0.35) {
-                color.red = 150;
-                color.green = 150;
-                color.blue = 150;
+                return gameArea.tileDict.getTile("grass");
             }
             else {
-                color.red = 255;
-                color.green = 255;
-                color.blue = 255;
+                return gameArea.tileDict.getTile("grass");
             }
-            
-            return color.toString();
-
         }
 
         // Draw a tile on the canvas relative to its distance from the camera
@@ -354,9 +392,9 @@
 
             // Offset from center of canvas, then draw the tile
             drawPos = pixelSnap(relPos.add(gameArea.center));
-            gameArea.context.fillStyle = getTileColor(tilePos);
+            sprite = getTileSprite(tilePos);
             half = gameArea.tileWidth / 2;
-            gameArea.context.fillRect(drawPos.x - half, drawPos.y - half, gameArea.tileWidth, gameArea.tileWidth);
+            gameArea.context.drawImage(sprite, drawPos.x - half, drawPos.y - half, gameArea.tileWidth, gameArea.tileWidth);
         }
 
         // Return the tile coordinates that an exact position lies within
@@ -384,8 +422,10 @@
             cameraTile.x = Math.floor(cameraTile.x / gameArea.tileWidth);
             cameraTile.y = Math.floor(cameraTile.y / gameArea.tileWidth);
 
-            for (let i = -11; i < 12; i++) {
-                for (let j = -9; j < 10; j++) {
+            scale = 50 / gameArea.tileWidth;
+
+            for (let i = -11 * scale; i <= 11 * scale; i++) {
+                for (let j = -9 * scale; j <= 9 * scale; j++) {
                     renderTile((new Vector2(i, j)).add(cameraTile));
                 }
             }
