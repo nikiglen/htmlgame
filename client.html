@@ -18,6 +18,11 @@
     <canvas id="myCanvas" class="gameCanvas" width="1000" height="680"></canvas>
 
     <script type="text/javascript">
+        // Modulo function
+        function modulo(n, mod) {
+            return Math.sign(n) * (Math.abs(n) % mod);
+        }
+
         // Implementation of a RGBA color value class
         class RGBA {
             constructor(r, g, b, a) {
@@ -61,6 +66,10 @@
             // Return the dot product between this vector and another vector
             dot(otherVector) {
                 return this.x * otherVector.x + this.y * otherVector.y;
+            }
+            // Return vector (x % m, y % m)
+            mod(m) {
+                return new Vector2(modulo(this.x, m), modulo(this.y, m));
             }
             // Return a copy of this vector
             copy() {
@@ -126,8 +135,14 @@
             return new Vector2(Math.cos(t), Math.sin(t));
         }
         // Calculate dot product of gradient * distance vectors
-        function dotGridGradient(cornerVec, coords) {
-            grad = randomGradient(cornerVec);
+        // If repeat is greater than 0, computes gradient of cornerVec modulo repeat
+        function dotGridGradient(cornerVec, coords, repeat) {
+            var grad;
+            if (repeat > 0) {
+                grad = randomGradient(cornerVec.mod(repeat));
+            } else {
+                grad = randomGradient(cornerVec);
+            }
 
             // Compute distance vector
             dist = coords.subtract(cornerVec);
@@ -137,7 +152,9 @@
         }
 
         // Function to compute perlin noise value (between 0 and 1) for given coords
-        function perlinNoise(coords) {
+        // repeat is the number of cells per tile before the gradients repeat
+        // if repeat is less than 1 or undefined, no tiling is used
+        function perlinNoise(coords, repeat) {
             // Determine coords of each corner
             upperLeftCorner = new Vector2(Math.floor(coords.x), Math.floor(coords.y));
             upperRightCorner = new Vector2(upperLeftCorner.x + 1, upperLeftCorner.y);
@@ -150,12 +167,12 @@
             interpWeights.y = fade(interpWeights.y);
 
             // Interpolate between corner gradients
-            dot0 = dotGridGradient(upperLeftCorner, coords);
-            dot1 = dotGridGradient(upperRightCorner, coords);
+            dot0 = dotGridGradient(upperLeftCorner, coords, repeat);
+            dot1 = dotGridGradient(upperRightCorner, coords, repeat);
             ix0 = lerp(dot0, dot1, interpWeights.x);
 
-            dot0 = dotGridGradient(lowerLeftCorner, coords);
-            dot1 = dotGridGradient(lowerRightCorner, coords);
+            dot0 = dotGridGradient(lowerLeftCorner, coords, repeat);
+            dot1 = dotGridGradient(lowerRightCorner, coords, repeat);
             ix1 = lerp(dot0, dot1, interpWeights.x);
 
             // Use sigmoid to bound output to (-1, 1)
