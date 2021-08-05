@@ -302,6 +302,45 @@
             }
         }
 
+        // Class for storing and computing water animations
+        class WaterAnimation {
+            constructor(speed, direction, width, noiseScale, context) {
+                // the time the animation began (now)
+                this.startTime = Date.now();
+                // how fast the noise moves (pixels per millisecond)
+                this.speed = speed;
+                // a vector representing the direction of movement
+                this.direction = direction;
+                // the width in pixels
+                this.width = width
+                // the scale of the noise (inverse of cell size)
+                this.noiseScale = noiseScale;
+
+                // Make a new imageData from the given context
+                this.imgData = context.createImageData(width, width);
+            }
+
+            // Compute the image data for the current state of the animation
+            compute() {
+                // the coordinates for the top left corner
+                startCoords = this.direction * (Date.now() - this.startTime) * speed;
+
+                // loop over all pixels and draw noise
+                for (int x = 0; x < this.width; x++) {
+                    for (int y = 0; y < this.width; y++) {
+                        // set pixel to white
+                        this.imgData.data[(y * this.width * 4) + (x * 4)] = 255;
+                        this.imgData.data[(y * this.width * 4) + (x * 4) + 1] = 255;
+                        this.imgData.data[(y * this.width * 4) + (x * 4) + 2] = 255;
+
+                        // calculate noise and set opacity
+                        noise =
+                    }
+                }
+            }
+
+        }
+
         // Game area object
         var gameArea = {
             canvas : document.getElementById("myCanvas"),
@@ -373,8 +412,8 @@
             return (c) / (2**32);
         }
 
-        // Get the noise of a tile and return the corresponding tile sprite
-        function getTileSprite(tilePos) {
+        // Get the terrain of a tile and return the corresponding name id
+        function getTileTerrain(tilePos) {
             // Determines the scale of the grid (ex: 32 x 32 tiles per cell)
             gridSize = 32;
 
@@ -385,20 +424,26 @@
 
             // Decide terrain for this tile
             if (noise < -0.25) {
-                return gameArea.tileDict.getTile("water");
+                return "water";
             }
             else if (noise < -0.15) {
-                return gameArea.tileDict.getTile("sand");
+                return "sand";
             }
             else if (noise < 0.1) {
-                return gameArea.tileDict.getTile("grass");
+                return "grass";
             }
             else if (noise < 0.35) {
-                return gameArea.tileDict.getTile("grass");
+                return "grass";
             }
             else {
-                return gameArea.tileDict.getTile("grass");
+                return "grass";
             }
+        }
+
+        // Render water noise effect at this draw position (should be center of tile)
+        function renderWater(drawPos, gameArea) {
+
+            gameArea.context.putImageData(perlinImgData, drawPos.x, drawPos.y);
         }
 
         // Draw a tile on the canvas relative to its distance from the camera
@@ -407,11 +452,17 @@
             // Get exact position relative to camera
             relPos = (tilePos.scaled(gameArea.tileWidth)).subtract(gameArea.camera.pos);
 
-            // Offset from center of canvas, then draw the tile
+            // Offset from center of canvas, then get the terrain and sprite
             drawPos = pixelSnap(relPos.add(gameArea.center));
-            sprite = getTileSprite(tilePos);
+            terrain = getTileTerrain(tilePos); 
+            sprite = gameArea.tileDict.getTile(terrain);
+
+            // Render the texture for the tile
             half = gameArea.tileWidth / 2;
             gameArea.context.drawImage(sprite, drawPos.x - half, drawPos.y - half, gameArea.tileWidth, gameArea.tileWidth);
+            if (terrain == "water") {
+                renderWater(drawPos, gameArea);
+            }
         }
 
         // Return the tile coordinates that an exact position lies within
