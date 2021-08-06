@@ -3,3 +3,6 @@ Source for my 2D topdown exploring game (name TBD) created using Javascript and 
 
 # To run
 Download or clone the repository and run client.html locally in your browser.
+
+# To play
+Use WASD or the arrow keys to move. That's all the gameplay for now! Camera movement and tile rendering is the current focus. Things like trees, collisions, and combat will  be soon to come.
