@@ -314,7 +314,10 @@
                 // the width in pixels
                 this.width = width
                 // the scale of the noise (inverse of cell size)
+                // NOTE: width must be divisible by noiseScale
                 this.noiseScale = noiseScale;
+                // the context for the animation
+                this.context = context;
 
                 // Make a new imageData from the given context
                 this.imgData = context.createImageData(width, width);
@@ -323,22 +326,33 @@
             // Compute the image data for the current state of the animation
             compute() {
                 // the coordinates for the top left corner
-                startCoords = this.direction * (Date.now() - this.startTime) * speed;
+                var startCoords = this.direction.scaled((Date.now() - this.startTime) * this.speed);
 
                 // loop over all pixels and draw noise
-                for (int x = 0; x < this.width; x++) {
-                    for (int y = 0; y < this.width; y++) {
-                        // set pixel to white
-                        this.imgData.data[(y * this.width * 4) + (x * 4)] = 255;
-                        this.imgData.data[(y * this.width * 4) + (x * 4) + 1] = 255;
-                        this.imgData.data[(y * this.width * 4) + (x * 4) + 2] = 255;
+                for (var x = 0; x < this.width; x++) {
+                    for (var y = 0; y < this.width; y++) {
+                        // calculate noise for this pixel
+                        var repeat = this.width / this.noiseScale;
+                        var scalar = 1 / this.noiseScale;
+                        var currCoords = startCoords.add(new Vector2(x, y));
+                        var noise = perlinNoise(currCoords.scaled(scalar), repeat) * 0.75;
+                        // add non-moving noise
+                        noise += perlinNoise((new Vector2(x, y)).scaled(scalar * 2), repeat * 2) * 0.75;
 
-                        // calculate noise and set opacity
-                        noise =
+                        // set pixel to white
+                        this.imgData.data[(y * this.width * 4) + (x * 4)] = Math.floor(50 * ((noise * 2 + 1) / 2));
+                        this.imgData.data[(y * this.width * 4) + (x * 4) + 1] = Math.floor(50 * ((noise * 2 + 1) / 2));
+                        this.imgData.data[(y * this.width * 4) + (x * 4) + 2] = 200;
+                        this.imgData.data[(y * this.width * 4) + (x * 4) + 3] = 255;
                     }
                 }
             }
 
+            // Render the water animation on a tile (center at draw position)
+            render(drawPos) {
+                var half = this.width / 2;
+                this.context.putImageData(this.imgData, drawPos.x - half, drawPos.y - half);
+            }
         }
 
         // Game area object
@@ -349,6 +363,7 @@
             player : new Player(new Vector2(0, 0)),
             camera : new Camera(new Vector2(0, 0)),
             tileDict : null,
+            waterAnim : null,
             start : function(fps) {
                 this.fps = fps;
                 this.canvas.width = 1000;
@@ -368,6 +383,12 @@
                         console.log("Failed to load sprite for " + name + " tile.");
                     }
                 });
+
+                // Start a water animation
+                var speed = 0.011111;
+                var direction = new Vector2(1, 1);
+                var noiseScale = 10;
+                this.waterAnim = new WaterAnimation(speed, direction, this.tileWidth, noiseScale, this.context);
 
                 // Make camera target player and set bounding box dimensions
                 this.camera.setTarget(this.player);
@@ -440,12 +461,6 @@
             }
         }
 
-        // Render water noise effect at this draw position (should be center of tile)
-        function renderWater(drawPos, gameArea) {
-
-            gameArea.context.putImageData(perlinImgData, drawPos.x, drawPos.y);
-        }
-
         // Draw a tile on the canvas relative to its distance from the camera
         // tilePos must be tile coordinates (scaled by tile width and in integer form)
         function renderTile(tilePos) {
@@ -461,7 +476,7 @@
             half = gameArea.tileWidth / 2;
             gameArea.context.drawImage(sprite, drawPos.x - half, drawPos.y - half, gameArea.tileWidth, gameArea.tileWidth);
             if (terrain == "water") {
-                renderWater(drawPos, gameArea);
+                gameArea.waterAnim.render(drawPos);
             }
         }
 
@@ -470,8 +485,6 @@
             return new Vector2(Math.floor(vector.x / gameArea.tileWidth),
                                Math.floor(vector.y / gameArea.tileWidth));
         }
-
-        var perlinImgData = null;
 
         // Render the game area
         function updateGameArea() {
@@ -484,6 +497,9 @@
             gameArea.player.move(gameArea.lastMoveInput.normalized(), timeSinceLastFrame / (1000 / gameArea.fps));
             // Then update the camera
             gameArea.camera.update();
+
+            // Compute the current water texture
+            gameArea.waterAnim.compute();
 
             // Loop and render all tiles in view of camera
             cameraTile = gameArea.camera.pos.copy();
